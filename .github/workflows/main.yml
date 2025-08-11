@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. 使用 Java 8
+      # 1. 设置 Java 8 环境
       - name: Set up JDK 8
         uses: actions/setup-java@v4
         with:
@@ -21,48 +21,64 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      # 2. 安装兼容 Java 8 的 Android SDK（使用 2019 年版本）
+      # 2. 安装兼容的 Android SDK
       - name: Install Legacy Android SDK
         run: |
-          # 创建必要的目录结构
-          mkdir -p $ANDROID_HOME/{licenses,platforms,build-tools}
+          # 创建基础目录
+          ANDROID_HOME=/usr/local/android-sdk
+          sudo mkdir -p $ANDROID_HOME
+          sudo chmod -R 777 $ANDROID_HOME
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          # 接受所有许可证
+          # 设置权限
+          sudo chmod -R 777 $ANDROID_HOME
+          
+          # 接受许可证
+          mkdir -p $ANDROID_HOME/licenses
           echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-license
           echo "84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_HOME/licenses/android-sdk-preview-license
           
-          # 下载真正兼容 Java 8 的 SDK 工具（2019 年版本）
+          # 下载旧版 SDK 工具
           wget -q https://dl.google.com/android/repository/sdk-tools-linux-4333796.zip
           unzip -q sdk-tools-linux-*.zip -d $ANDROID_HOME
           rm sdk-tools-linux-*.zip
           
-          # 设置环境变量
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          # 设置 PATH
           echo "$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
           
-          # 安装必要组件（使用旧版 SDK 管理器）
+          # 安装必要组件（避免预览版）
           yes | $ANDROID_HOME/tools/bin/sdkmanager --install \
             "platforms;android-28" \
             "build-tools;28.0.3" \
             "platform-tools" \
-            "tools"
+            "tools" \
+            "emulator"
 
-      # 3. 配置 Gradle 使用 4.10.3（完全兼容 Java 8）
-      - name: Configure Gradle Wrapper
+      # 3. 修复 gradlew 权限
+      - name: Fix gradlew permissions
         run: |
-          # 使用 Gradle 4.10.3
+          # 确保 gradlew 有执行权限
+          chmod +x gradlew
+          # 双重确认权限设置
+          sudo chmod +x gradlew
+          # 列出权限验证
+          ls -l gradlew
+
+      # 4. 配置 Gradle
+      - name: Configure Gradle
+        run: |
+          # 使用兼容的 Gradle 版本
           sed -i 's/distributionUrl=.*/distributionUrl=https\\:\/\/services.gradle.org\/distributions\/gradle-4.10.3-bin.zip/' gradle/wrapper/gradle-wrapper.properties
           
-          # 确保 gradlew 使用正确的 Gradle 版本
-          ./gradlew --version || true
-
-      # 4. 验证环境
-      - name: Verify Environment
-        run: |
-          java -version
-          $ANDROID_HOME/tools/bin/sdkmanager --list
-          ./gradlew --version
+          # 清理缓存
+          rm -rf ~/.gradle/caches
 
       # 5. 构建项目
       - name: Build with Gradle
-        run: ./gradlew build --stacktrace
+        run: |
+          # 显示环境信息
+          java -version
+          ./gradlew --version
+          
+          # 执行构建
+          ./gradlew build --stacktrace
